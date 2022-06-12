@@ -162,6 +162,7 @@ If you get below response, then authentication is successful (note: the value is
 ```
 lxc config device add radius myport1812 proxy listen=tcp:0.0.0.0:1812 connect=tcp:127.0.0.1:1812
 lxc exec radius add-apt-repository ppa:freeradius/stable-3.0
+lxc exec radius apt update
 lxc exec radius apt install freeradius git
 lxc exec radius mv /etc/freeradius/clients.conf /etc/freeradius/clients.conf.back
 lxc exec radius mv /etc/freeradius/users /etc/freeradius/users.back
