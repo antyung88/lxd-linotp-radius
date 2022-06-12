@@ -159,3 +159,128 @@ If you get below response, then authentication is successful (note: the value is
   
 ### Install and configure FreeRADIUS.
 
+```
+lxc config device add radius myport1812 proxy listen=tcp:0.0.0.0:1812 connect=tcp:127.0.0.1:1812
+lxc exec radius add-apt-repository ppa:freeradius/stable-3.0
+lxc exec radius apt install freeradius git
+lxc exec radius mv /etc/freeradius/clients.conf /etc/freeradius/clients.conf.back
+lxc exec radius mv /etc/freeradius/users /etc/freeradius/users.back
+sudo git clone https://github.com/LinOTP/linotp-auth-freeradius-perl.git /usr/share/linotp/linotp-auth-freeradius-perl 
+```
+```
+cat <<EOF| lxc exec radius bash
+rm /etc/freeradius/mods-available/perl
+cat <<\EOF_C >/etc/freeradius/mods-available/perl
+perl {
+filename = /usr/share/linotp/linotp-auth-freeradius-perl/radius_linotp.pm
+}
+EOF_C
+ln -s /etc/freeradius/mods-available/perl /etc/freeradius/mods-enabled/perl
+EOF
+```
+
+Create a file ```/etc/freeradius/clients.conf```. Open the file and copy the example configuration shown below. Replace MYSECRET with your own super secure secret. Replace [CIDR of Directory Service] with your AWS Directory Service Subnets or VPC and [YOUR-NETMASK] to allow VALID request from within the VPC. For example, CIDR = 172.31.10.0 and Netmask =24. Note MYSECRET should be inside single quotes. This is the secret you will use to enable MFA on AWS Directory Service console.
+
+```
+cat <<EOF| lxc exec radius bash
+cat <<\EOF_C >/etc/freeradius/clients.conf
+client localhost {
+ipaddr  = 127.0.0.1
+netmask= 32
+secret  = 'MYSECRET'
+}
+client adconnector {
+ipaddr  = <CIDR of Directory Service subnets or VPC>
+netmask = <YOUR-NETMASK>
+secret  = 'MYSECRET'
+}
+EOF_C
+EOF
+```
+
+Create the file ```/etc/linotp2/rlm_perl.ini``` with below contents. Change YOUR-REALM to the one you created
+
+```
+cat <<EOF| lxc exec radius bash
+cat <<\EOF_C >/etc/linotp2/rlm_perl.ini
+#IP of the linotp server
+URL=https://localhost/validate/simplecheck
+#optional: limits search for user to this realm
+REALM=<YOUR-REALM>
+#optional: only use this UserIdResolver
+#RESCONF=flat_file
+#optional: comment out if everything seems to work fine
+Debug=True
+#optional: use this, if you have selfsigned certificates, otherwise comment out
+SSL_CHECK=False
+EOF_C
+EOF
+```
+        
+```
+lxc exec radius rm /etc/freeradius/sites-enabled/{inner-tunnel,default}
+lxc exec radius rm /etc/freeradius/mods-enabled/eap
+```
+
+Activate ‘linotp’ within ‘FreeRADIUS’. Create a new file ‘/etc/freeradius/sites-available/linotp‘ with the following content:
+
+``
+cat <<EOF| lxc exec radius bash
+cat <<\EOF_C >/etc/freeradius/sites-available/linotp
+server default {
+listen {
+type = auth
+ipaddr = *
+port = 0
+limit {
+max_connections = 16
+lifetime = 0
+idle_timeout = 30
+}
+}
+listen {
+ipaddr = *
+port = 0
+type = acct
+}authorize {
+preprocess
+IPASS
+suffix
+ntdomain
+files
+expiration
+logintime
+update control {
+Auth-Type := Perl
+}
+pap
+}authenticate {
+Auth-Type Perl {
+perl
+}
+}preacct {
+preprocess
+acct_unique
+suffix
+files
+}accounting {
+detail
+unix
+-sql
+exec
+attr_filter.accounting_response
+}session {
+}
+post-auth {
+update {
+&reply: += &session-state:
+}
+-sql
+exec
+remove_reply_message_if_eap
+}
+}
+EOF_C
+ln -s /etc/freeradius/sites-available/linotp /etc/freeradius/sites-enabled/linotp
+EOF
+```
