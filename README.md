@@ -224,7 +224,7 @@ lxc exec radius rm /etc/freeradius/mods-enabled/eap
 
 Activate ‘linotp’ within ‘FreeRADIUS’. Create a new file ‘/etc/freeradius/sites-available/linotp‘ with the following content:
 
-``
+```
 cat <<EOF| lxc exec radius bash
 cat <<\EOF_C >/etc/freeradius/sites-available/linotp
 server default {
@@ -282,5 +282,7 @@ remove_reply_message_if_eap
 }
 EOF_C
 ln -s /etc/freeradius/sites-available/linotp /etc/freeradius/sites-enabled/linotp
+service freeradius stop
+service freeradius start
 EOF
 ```
